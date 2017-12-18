@@ -76,8 +76,8 @@ class MetadataCache(brokerId: Int) extends Logging {
         maybeLeader match {
           case None =>
             debug(s"Error while fetching metadata for $topicPartition: leader not available")
-            new MetadataResponse.PartitionMetadata(Errors.LEADER_NOT_AVAILABLE, partitionId, Node.noNode(), 
-              NO_LEADER_EPOCH, replicaInfo.asJava, java.util.Collections.emptyList(), offlineReplicaInfo.asJava)
+            new MetadataResponse.PartitionMetadata(Errors.LEADER_NOT_AVAILABLE, partitionId, Node.noNode(),
+              MetadataResponse.NO_LEADER_EPOCH, replicaInfo.asJava, java.util.Collections.emptyList(), offlineReplicaInfo.asJava)
 
           case Some(leader) =>
             val isr = partitionState.basePartitionState.isr.asScala.map(_.toInt)

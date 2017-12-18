@@ -80,9 +80,12 @@ public class OffsetCommitResponse extends AbstractResponse {
             THROTTLE_TIME_MS,
             new Field(RESPONSES_KEY_NAME, new ArrayOf(OFFSET_COMMIT_RESPONSE_TOPIC_V0)));
 
+    /** v4 request stores leaderEpoch. */
+    private static final Schema OFFSET_COMMIT_RESPONSE_V4 = OFFSET_COMMIT_RESPONSE_V3;
+
     public static Schema[] schemaVersions() {
         return new Schema[] {OFFSET_COMMIT_RESPONSE_V0, OFFSET_COMMIT_RESPONSE_V1, OFFSET_COMMIT_RESPONSE_V2,
-            OFFSET_COMMIT_RESPONSE_V3};
+            OFFSET_COMMIT_RESPONSE_V3, OFFSET_COMMIT_RESPONSE_V4};
     }
 
     private final Map<TopicPartition, Errors> responseData;

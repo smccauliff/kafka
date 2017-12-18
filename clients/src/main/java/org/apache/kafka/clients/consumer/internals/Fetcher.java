@@ -391,7 +391,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
             final Set<TopicPartition> partitionsWithNoOffsets) {
         OffsetResetStrategy strategy = subscriptions.resetStrategy(partition);
         switch (strategy) {
-        case EARLIEST: 
+        case EARLIEST:
             output.put(partition, ListOffsetRequest.EARLIEST_TIMESTAMP);
             break;
         case CLOSEST:
@@ -420,11 +420,11 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
         final Set<TopicPartition> partitionsWithNoOffsets = new HashSet<>();
         //TOOD: why is final being used in this way?
         final Set<TopicPartition> partitionsUsingClosestReset = new HashSet<>();
-        
+
         for (final TopicPartition partition : partitions) {
             offsetResetStrategyTimestamp(partition, offsetResets, partitionsWithNoOffsets, partitionsUsingClosestReset);
         }
-        
+
         final Map<TopicPartition, OffsetData> offsetsByTimes = retrieveOffsetsByTimes(offsetResets, Long.MAX_VALUE, false);
         for (final TopicPartition partition : partitions) {
             final OffsetData offsetData = offsetsByTimes.get(partition);
@@ -496,7 +496,8 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
         } while (remaining > 0);
         throw new TimeoutException("Failed to get offsets by times in " + timeout + " ms");
     }
-    
+
+    /* TODO
     private Map<TopicPartition, OffsetsForLeaderEpochResponse> offsetsForLeaderEpoch(Set<TopicPartition> partitions, long timeout) {
         long startMs = time.milliseconds();
         long remaining = timeout;
@@ -528,7 +529,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
             remaining = timeout - elapsed;
         } while (remaining > 0);
         throw new TimeoutException("Failed to get offsets by times in " + timeout + " ms");
-    }
+    }*/
 
     public Map<TopicPartition, Long> beginningOffsets(Collection<TopicPartition> partitions, long timeout) {
         return beginningOrEndOffset(partitions, ListOffsetRequest.EARLIEST_TIMESTAMP, timeout);

@@ -18,16 +18,18 @@
 package kafka.common
 
 import org.apache.kafka.common.protocol.Errors
+import org.apache.kafka.common.requests.MetadataResponse
 
-case class OffsetMetadata(offset: Long, metadata: String = OffsetMetadata.NoMetadata) {
-  override def toString = "OffsetMetadata[%d,%s]"
+case class OffsetMetadata(offset: Long, metadata: String = OffsetMetadata.NoMetadata, leaderEpoch: Int = MetadataResponse.NO_LEADER_EPOCH) {
+  override def toString = "OffsetMetadata[%d,%s,%d]"
     .format(offset,
-    if (metadata != null && metadata.length > 0) metadata else "NO_METADATA")
+    if (metadata != null && metadata.length > 0) metadata else "NO_METADATA", leaderEpoch)
 }
 
 object OffsetMetadata {
   val InvalidOffset: Long = -1L
   val NoMetadata: String = ""
+  val NoLeaderEpoch: Int = MetadataResponse.NO_LEADER_EPOCH
 
   val InvalidOffsetMetadata = OffsetMetadata(OffsetMetadata.InvalidOffset, OffsetMetadata.NoMetadata)
 }

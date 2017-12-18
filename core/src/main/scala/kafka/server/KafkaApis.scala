@@ -1012,7 +1012,7 @@ class KafkaApis(val requestChannel: RequestChannel,
                   payloadOpt match {
                     case Some(payload) =>
                       (topicPartition, new OffsetFetchResponse.PartitionData(
-                          payload.toLong, OffsetFetchResponse.NO_METADATA, Errors.NONE))
+                          payload.toLong, OffsetFetchResponse.NO_METADATA, OffsetMetadata.NoLeaderEpoch, Errors.NONE))
                     case None =>
                       (topicPartition, OffsetFetchResponse.UNKNOWN_PARTITION)
                   }
@@ -1020,7 +1020,7 @@ class KafkaApis(val requestChannel: RequestChannel,
               } catch {
                 case e: Throwable =>
                   (topicPartition, new OffsetFetchResponse.PartitionData(
-                      OffsetFetchResponse.INVALID_OFFSET, OffsetFetchResponse.NO_METADATA, Errors.forException(e)))
+                      OffsetFetchResponse.INVALID_OFFSET, OffsetFetchResponse.NO_METADATA, OffsetMetadata.NoLeaderEpoch, Errors.forException(e)))
               }
             }.toMap
 

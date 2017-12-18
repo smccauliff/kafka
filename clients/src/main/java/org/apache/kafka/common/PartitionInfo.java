@@ -24,22 +24,24 @@ public class PartitionInfo {
     private final String topic;
     private final int partition;
     private final Node leader;
+    private final int leaderEpoch;
     private final Node[] replicas;
     private final Node[] inSyncReplicas;
     private final Node[] offlineReplicas;
 
     // Used only by tests
-    public PartitionInfo(String topic, int partition, Node leader, Node[] replicas, Node[] inSyncReplicas) {
-        this(topic, partition, leader, replicas, inSyncReplicas, new Node[0]);
+    public PartitionInfo(String topic, int partition, Node leader, int leaderEpoch, Node[] replicas, Node[] inSyncReplicas) {
+        this(topic, partition, leader, leaderEpoch, replicas, inSyncReplicas, new Node[0]);
     }
 
-    public PartitionInfo(String topic, int partition, Node leader, Node[] replicas, Node[] inSyncReplicas, Node[] offlineReplicas) {
+    public PartitionInfo(String topic, int partition, Node leader, int leaderEpoch, Node[] replicas, Node[] inSyncReplicas, Node[] offlineReplicas) {
         this.topic = topic;
         this.partition = partition;
         this.leader = leader;
         this.replicas = replicas;
         this.inSyncReplicas = inSyncReplicas;
         this.offlineReplicas = offlineReplicas;
+        this.leaderEpoch = leaderEpoch;
     }
 
     /**
@@ -64,6 +66,13 @@ public class PartitionInfo {
     }
 
     /**
+     * The current leader epoch for this partition.
+     */
+    public int leaderEpoch() {
+        return leaderEpoch;
+    }
+    
+    /**
      * The complete set of replicas for this partition regardless of whether they are alive or up-to-date
      */
     public Node[] replicas() {
@@ -87,10 +96,11 @@ public class PartitionInfo {
 
     @Override
     public String toString() {
-        return String.format("Partition(topic = %s, partition = %d, leader = %s, replicas = %s, isr = %s, offlineReplicas = %s)",
+        return String.format("Partition(topic = %s, partition = %d, leader = %s, leaderEpoch = %d, replicas = %s, isr = %s, offlineReplicas = %s)",
                              topic,
                              partition,
                              leader == null ? "none" : leader.idString(),
+                             leaderEpoch,
                              formatNodeIds(replicas),
                              formatNodeIds(inSyncReplicas),
                              formatNodeIds(offlineReplicas));

@@ -38,6 +38,7 @@ import static org.apache.kafka.common.protocol.CommonFields.PARTITION_ID;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.protocol.CommonFields.TOPIC_NAME;
 import static org.apache.kafka.common.protocol.types.Type.INT64;
+import static org.apache.kafka.common.protocol.types.Type.INT32;
 import static org.apache.kafka.common.protocol.types.Type.NULLABLE_STRING;
 
 public class OffsetFetchResponse extends AbstractResponse {
@@ -50,16 +51,28 @@ public class OffsetFetchResponse extends AbstractResponse {
     // partition level fields
     private static final String COMMIT_OFFSET_KEY_NAME = "offset";
     private static final String METADATA_KEY_NAME = "metadata";
+    private static final String LEADER_EPOCH_KEY_NAME = "leader_epoch";
 
     private static final Schema OFFSET_FETCH_RESPONSE_PARTITION_V0 = new Schema(
             PARTITION_ID,
             new Field(COMMIT_OFFSET_KEY_NAME, INT64, "Last committed message offset."),
             new Field(METADATA_KEY_NAME, NULLABLE_STRING, "Any associated metadata the client wants to keep."),
             ERROR_CODE);
+    
+    private static final Schema OFFSET_FETCH_RESPONSE_PARTITION_V1 = new Schema(
+            PARTITION_ID,
+            new Field(COMMIT_OFFSET_KEY_NAME, INT64, "Last committed message offset."),
+            new Field(METADATA_KEY_NAME, NULLABLE_STRING, "Any associated metadata the client wants to keep."),
+            new Field(LEADER_EPOCH_KEY_NAME, INT32, "The leader epoch for this partiton at the time the offset was committed."),
+            ERROR_CODE);
 
     private static final Schema OFFSET_FETCH_RESPONSE_TOPIC_V0 = new Schema(
             TOPIC_NAME,
             new Field(PARTITIONS_KEY_NAME, new ArrayOf(OFFSET_FETCH_RESPONSE_PARTITION_V0)));
+    
+    private static final Schema OFFSET_FETCH_RESPONSE_TOPIC_V1 = new Schema(
+            TOPIC_NAME,
+            new Field(PARTITIONS_KEY_NAME, new ArrayOf(OFFSET_FETCH_RESPONSE_PARTITION_V1)));
 
     private static final Schema OFFSET_FETCH_RESPONSE_V0 = new Schema(
             new Field(RESPONSES_KEY_NAME, new ArrayOf(OFFSET_FETCH_RESPONSE_TOPIC_V0)));
@@ -75,18 +88,25 @@ public class OffsetFetchResponse extends AbstractResponse {
             THROTTLE_TIME_MS,
             new Field(RESPONSES_KEY_NAME, new ArrayOf(OFFSET_FETCH_RESPONSE_TOPIC_V0)),
             ERROR_CODE);
+    
+    /* v4 adds leaderEpoch at the partition level */
+    private static final Schema OFFSET_FETCH_RESPONSE_V4 = new Schema(
+            THROTTLE_TIME_MS,
+            new Field(RESPONSES_KEY_NAME, new ArrayOf(OFFSET_FETCH_RESPONSE_TOPIC_V1)),
+            ERROR_CODE);
+    
 
     public static Schema[] schemaVersions() {
         return new Schema[] {OFFSET_FETCH_RESPONSE_V0, OFFSET_FETCH_RESPONSE_V1, OFFSET_FETCH_RESPONSE_V2,
-            OFFSET_FETCH_RESPONSE_V3};
+            OFFSET_FETCH_RESPONSE_V3, OFFSET_FETCH_RESPONSE_V4};
     }
 
     public static final long INVALID_OFFSET = -1L;
     public static final String NO_METADATA = "";
     public static final PartitionData UNKNOWN_PARTITION = new PartitionData(INVALID_OFFSET, NO_METADATA,
-            Errors.UNKNOWN_TOPIC_OR_PARTITION);
+    		MetadataResponse.NO_LEADER_EPOCH, Errors.UNKNOWN_TOPIC_OR_PARTITION);
     public static final PartitionData UNAUTHORIZED_PARTITION = new PartitionData(INVALID_OFFSET, NO_METADATA,
-            Errors.TOPIC_AUTHORIZATION_FAILED);
+    		MetadataResponse.NO_LEADER_EPOCH, Errors.TOPIC_AUTHORIZATION_FAILED);
 
     /**
      * Possible error codes:
@@ -109,12 +129,14 @@ public class OffsetFetchResponse extends AbstractResponse {
 
     public static final class PartitionData {
         public final long offset;
+        public final int leaderEpoch;
         public final String metadata;
         public final Errors error;
 
-        public PartitionData(long offset, String metadata, Errors error) {
+        public PartitionData(long offset, String metadata, int leaderEpoch, Errors error) {
             this.offset = offset;
             this.metadata = metadata;
+            this.leaderEpoch = leaderEpoch;
             this.error = error;
         }
 
@@ -159,7 +181,10 @@ public class OffsetFetchResponse extends AbstractResponse {
                 Errors error = Errors.forCode(partitionResponse.get(ERROR_CODE));
                 if (error != Errors.NONE && !PARTITION_ERRORS.contains(error))
                     topLevelError = error;
-                PartitionData partitionData = new PartitionData(offset, metadata, error);
+                int leaderEpoch = MetadataResponse.NO_LEADER_EPOCH;
+                if (partitionResponse.hasField(LEADER_EPOCH_KEY_NAME))
+                	leaderEpoch = partitionResponse.getInt(LEADER_EPOCH_KEY_NAME);
+                PartitionData partitionData = new PartitionData(offset, metadata, leaderEpoch, error);
                 this.responseData.put(new TopicPartition(topic, partition), partitionData);
             }
         }

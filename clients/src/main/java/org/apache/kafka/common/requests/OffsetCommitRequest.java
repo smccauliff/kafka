@@ -38,10 +38,11 @@ import static org.apache.kafka.common.protocol.CommonFields.MEMBER_ID;
 import static org.apache.kafka.common.protocol.CommonFields.PARTITION_ID;
 import static org.apache.kafka.common.protocol.CommonFields.TOPIC_NAME;
 import static org.apache.kafka.common.protocol.types.Type.INT64;
+import static org.apache.kafka.common.protocol.types.Type.INT32;
 import static org.apache.kafka.common.protocol.types.Type.NULLABLE_STRING;
 
 /**
- * This wrapper supports both v0 and v1 of OffsetCommitRequest.
+ * This wrapper supports versions: 0, 1, 2, 3, 4 of OffsetCommitRequest.
  */
 public class OffsetCommitRequest extends AbstractRequest {
     private static final String TOPICS_KEY_NAME = "topics";
@@ -53,9 +54,10 @@ public class OffsetCommitRequest extends AbstractRequest {
     // partition level field names
     private static final String COMMIT_OFFSET_KEY_NAME = "offset";
     private static final String METADATA_KEY_NAME = "metadata";
+    private static final String LEADER_EPOCH_KEY_NAME = "leader_epoch";
 
     @Deprecated
-    private static final String TIMESTAMP_KEY_NAME = "timestamp";         // for v0, v1
+    private static final String TIMESTAMP_KEY_NAME = "timestamp";         // for v1
 
     /* Offset commit api */
     private static final Schema OFFSET_COMMIT_REQUEST_PARTITION_V0 = new Schema(
@@ -73,6 +75,13 @@ public class OffsetCommitRequest extends AbstractRequest {
             PARTITION_ID,
             new Field(COMMIT_OFFSET_KEY_NAME, INT64, "Message offset to be committed."),
             new Field(METADATA_KEY_NAME, NULLABLE_STRING, "Any associated metadata the client wants to keep."));
+    
+    private static final Schema OFFSET_COMMIT_REQUEST_PARTITION_V3 = new Schema(
+    		 PARTITION_ID,
+             new Field(COMMIT_OFFSET_KEY_NAME, INT64, "Message offset to be committed."),
+             new Field(METADATA_KEY_NAME, NULLABLE_STRING, "Any associated metadata the client wants to keep."),
+             new Field(LEADER_EPOCH_KEY_NAME, INT32, "The leader epoch assocated with the committed offset.")
+    		);
 
     private static final Schema OFFSET_COMMIT_REQUEST_TOPIC_V0 = new Schema(
             TOPIC_NAME,
@@ -85,7 +94,11 @@ public class OffsetCommitRequest extends AbstractRequest {
     private static final Schema OFFSET_COMMIT_REQUEST_TOPIC_V2 = new Schema(
             TOPIC_NAME,
             new Field(PARTITIONS_KEY_NAME, new ArrayOf(OFFSET_COMMIT_REQUEST_PARTITION_V2), "Partitions to commit offsets."));
-
+    
+    private static final Schema OFFSET_COMMIT_REQUEST_TOPIC_V3 = new Schema(
+            TOPIC_NAME,
+            new Field(PARTITIONS_KEY_NAME, new ArrayOf(OFFSET_COMMIT_REQUEST_PARTITION_V3), "Partitions to commit offsets."));
+    
     private static final Schema OFFSET_COMMIT_REQUEST_V0 = new Schema(
             GROUP_ID,
             new Field(TOPICS_KEY_NAME, new ArrayOf(OFFSET_COMMIT_REQUEST_TOPIC_V0), "Topics to commit offsets."));
@@ -105,16 +118,24 @@ public class OffsetCommitRequest extends AbstractRequest {
 
     /* v3 request is same as v2. Throttle time has been added to response */
     private static final Schema OFFSET_COMMIT_REQUEST_V3 = OFFSET_COMMIT_REQUEST_V2;
+    
+
+    private static final Schema OFFSET_COMMIT_REQUEST_V4 =  new Schema(GROUP_ID,
+            GENERATION_ID,
+            MEMBER_ID,
+            new Field(RETENTION_TIME_KEY_NAME, INT64, "Time period in ms to retain the offset."),
+            new Field(TOPICS_KEY_NAME, new ArrayOf(OFFSET_COMMIT_REQUEST_TOPIC_V3), "Topics to commit offsets."));
 
     public static Schema[] schemaVersions() {
         return new Schema[] {OFFSET_COMMIT_REQUEST_V0, OFFSET_COMMIT_REQUEST_V1, OFFSET_COMMIT_REQUEST_V2,
-            OFFSET_COMMIT_REQUEST_V3};
+            OFFSET_COMMIT_REQUEST_V3, OFFSET_COMMIT_REQUEST_V4};
     }
 
     // default values for the current version
     public static final int DEFAULT_GENERATION_ID = -1;
     public static final String DEFAULT_MEMBER_ID = "";
     public static final long DEFAULT_RETENTION_TIME = -1L;
+    public static final int DEFAULT_LEADER_EPOCH = -1;
 
     // default values for old versions,
     // will be removed after these versions are deprecated
@@ -133,16 +154,25 @@ public class OffsetCommitRequest extends AbstractRequest {
 
         public final long offset;
         public final String metadata;
+        public final int leaderEpoch;
 
         @Deprecated
         public PartitionData(long offset, long timestamp, String metadata) {
             this.offset = offset;
             this.timestamp = timestamp;
             this.metadata = metadata;
+            this.leaderEpoch = DEFAULT_LEADER_EPOCH;
         }
 
         public PartitionData(long offset, String metadata) {
             this(offset, DEFAULT_TIMESTAMP, metadata);
+        }
+        
+        public PartitionData(long offset, String metadata, int leaderEpoch) {
+            this.offset = offset;
+            this.metadata = metadata;
+            this.leaderEpoch = leaderEpoch;
+            this.timestamp = DEFAULT_TIMESTAMP;
         }
 
         @Override
@@ -151,6 +181,7 @@ public class OffsetCommitRequest extends AbstractRequest {
             bld.append("(timestamp=").append(timestamp).
                 append(", offset=").append(offset).
                 append(", metadata=").append(metadata).
+                append(", leaderEpoch=").append(leaderEpoch).
                 append(")");
             return bld.toString();
         }
@@ -193,6 +224,7 @@ public class OffsetCommitRequest extends AbstractRequest {
                 case 1:
                 case 2:
                 case 3:
+                case 4:
                     long retentionTime = version == 1 ? DEFAULT_RETENTION_TIME : this.retentionTime;
                     return new OffsetCommitRequest(groupId, generationId, memberId, retentionTime, offsetData, version);
                 default:
@@ -249,12 +281,23 @@ public class OffsetCommitRequest extends AbstractRequest {
                 long offset = partitionDataStruct.getLong(COMMIT_OFFSET_KEY_NAME);
                 String metadata = partitionDataStruct.getString(METADATA_KEY_NAME);
                 PartitionData partitionOffset;
-                // This field only exists in v1
-                if (partitionDataStruct.hasField(TIMESTAMP_KEY_NAME)) {
+                switch (versionId) {
+                case 1: 
+                    // This field only exists in v1
                     long timestamp = partitionDataStruct.getLong(TIMESTAMP_KEY_NAME);
                     partitionOffset = new PartitionData(offset, timestamp, metadata);
-                } else {
+                    break;
+                case 0:
+                case 2:
+                case 3:
                     partitionOffset = new PartitionData(offset, metadata);
+                    break;
+                case 4:
+                    int leaderEpoch = partitionDataStruct.getInt(LEADER_EPOCH_KEY_NAME);
+                    partitionOffset = new PartitionData(offset, metadata, leaderEpoch);
+                    break;
+                default:
+                    throw new UnsupportedVersionException("Unsupported OffsetCommitRequest version " + versionId);
                 }
                 offsetData.put(new TopicPartition(topic, partition), partitionOffset);
             }
@@ -278,10 +321,12 @@ public class OffsetCommitRequest extends AbstractRequest {
                 Struct partitionData = topicData.instance(PARTITIONS_KEY_NAME);
                 partitionData.set(PARTITION_ID, partitionEntry.getKey());
                 partitionData.set(COMMIT_OFFSET_KEY_NAME, fetchPartitionData.offset);
+                partitionData.set(METADATA_KEY_NAME, fetchPartitionData.metadata);
                 // Only for v1
                 if (partitionData.hasField(TIMESTAMP_KEY_NAME))
                     partitionData.set(TIMESTAMP_KEY_NAME, fetchPartitionData.timestamp);
-                partitionData.set(METADATA_KEY_NAME, fetchPartitionData.metadata);
+                if (version >= 4)
+                    partitionData.set(LEADER_EPOCH_KEY_NAME, fetchPartitionData.leaderEpoch);
                 partitionArray.add(partitionData);
             }
             topicData.set(PARTITIONS_KEY_NAME, partitionArray.toArray());

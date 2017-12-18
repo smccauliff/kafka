@@ -72,12 +72,15 @@ public class OffsetFetchRequest extends AbstractRequest {
             new Field(TOPICS_KEY_NAME, ArrayOf.nullable(OFFSET_FETCH_REQUEST_TOPIC_V0), "Topics to fetch offsets. If the " +
                     "topic array is null fetch offsets for all topics."));
 
-    /* v3 request is the same as v2. Throttle time has been added to v3 response */
+    /** v3 request is the same as v2. Throttle time has been added to v3 response */
     private static final Schema OFFSET_FETCH_REQUEST_V3 = OFFSET_FETCH_REQUEST_V2;
+    
+    /** v4 request is the same as v3 and v2. leaderEpoch has been added to v4 response */
+    private static final Schema OFFSET_FETCH_REQUEST_V4 = OFFSET_FETCH_REQUEST_V2;
 
     public static Schema[] schemaVersions() {
         return new Schema[] {OFFSET_FETCH_REQUEST_V0, OFFSET_FETCH_REQUEST_V1, OFFSET_FETCH_REQUEST_V2,
-            OFFSET_FETCH_REQUEST_V3};
+            OFFSET_FETCH_REQUEST_V3, OFFSET_FETCH_REQUEST_V4};
     }
 
     public static class Builder extends AbstractRequest.Builder<OffsetFetchRequest> {
@@ -168,6 +171,7 @@ public class OffsetFetchRequest extends AbstractRequest {
                 responsePartitions.put(partition, new OffsetFetchResponse.PartitionData(
                         OffsetFetchResponse.INVALID_OFFSET,
                         OffsetFetchResponse.NO_METADATA,
+                        MetadataResponse.NO_LEADER_EPOCH,
                         error));
             }
         }
@@ -178,6 +182,7 @@ public class OffsetFetchRequest extends AbstractRequest {
             case 2:
                 return new OffsetFetchResponse(error, responsePartitions);
             case 3:
+            case 4:
                 return new OffsetFetchResponse(throttleTimeMs, error, responsePartitions);
             default:
                 throw new IllegalArgumentException(String.format("Version %d is not valid. Valid versions for %s are 0 to %d",

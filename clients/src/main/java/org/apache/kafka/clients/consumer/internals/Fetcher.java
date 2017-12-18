@@ -59,6 +59,7 @@ import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
+import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.ExtendedDeserializer;
 import org.apache.kafka.common.utils.CloseableIterator;
@@ -386,14 +387,26 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
     private void offsetResetStrategyTimestamp(
             final TopicPartition partition,
             final Map<TopicPartition, Long> output,
+            final Set<TopicPartition> partitonsResetOffsetClosest,
             final Set<TopicPartition> partitionsWithNoOffsets) {
         OffsetResetStrategy strategy = subscriptions.resetStrategy(partition);
-        if (strategy == OffsetResetStrategy.EARLIEST)
+        switch (strategy) {
+        case EARLIEST: 
             output.put(partition, ListOffsetRequest.EARLIEST_TIMESTAMP);
-        else if (strategy == OffsetResetStrategy.LATEST)
+            break;
+        case CLOSEST:
+            partitonsResetOffsetClosest.add(partition);
+            //we may need to check if we fell off the beginning
+            //TODO: perhaps we recheck later instead of checking twice every time.
+        case LATEST:
             output.put(partition, endTimestamp());
-        else
+            break;
+        case NONE:
             partitionsWithNoOffsets.add(partition);
+            break;
+        default:
+            throw new IllegalStateException("Unhandled OffsetResetStrategy " + strategy);
+        }
     }
 
     /**
@@ -405,9 +418,13 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
     private void resetOffsets(final Set<TopicPartition> partitions) {
         final Map<TopicPartition, Long> offsetResets = new HashMap<>();
         final Set<TopicPartition> partitionsWithNoOffsets = new HashSet<>();
+        //TOOD: why is final being used in this way?
+        final Set<TopicPartition> partitionsUsingClosestReset = new HashSet<>();
+        
         for (final TopicPartition partition : partitions) {
-            offsetResetStrategyTimestamp(partition, offsetResets, partitionsWithNoOffsets);
+            offsetResetStrategyTimestamp(partition, offsetResets, partitionsWithNoOffsets, partitionsUsingClosestReset);
         }
+        
         final Map<TopicPartition, OffsetData> offsetsByTimes = retrieveOffsetsByTimes(offsetResets, Long.MAX_VALUE, false);
         for (final TopicPartition partition : partitions) {
             final OffsetData offsetData = offsetsByTimes.get(partition);
@@ -448,6 +465,39 @@ public class Fetcher<K, V> implements SubscriptionState.Listener, Closeable {
         if (timestampsToSearch.isEmpty())
             return Collections.emptyMap();
 
+        long startMs = time.milliseconds();
+        long remaining = timeout;
+        do {
+            RequestFuture<Map<TopicPartition, OffsetData>> future =
+                    sendListOffsetRequests(requireTimestamps, timestampsToSearch);
+            client.poll(future, remaining);
+
+            if (!future.isDone())
+                break;
+
+            if (future.succeeded())
+                return future.value();
+
+            if (!future.isRetriable())
+                throw future.exception();
+
+            long elapsed = time.milliseconds() - startMs;
+            remaining = timeout - elapsed;
+            if (remaining <= 0)
+                break;
+
+            if (future.exception() instanceof InvalidMetadataException)
+                client.awaitMetadataUpdate(remaining);
+            else
+                time.sleep(Math.min(remaining, retryBackoffMs));
+
+            elapsed = time.milliseconds() - startMs;
+            remaining = timeout - elapsed;
+        } while (remaining > 0);
+        throw new TimeoutException("Failed to get offsets by times in " + timeout + " ms");
+    }
+    
+    private Map<TopicPartition, OffsetsForLeaderEpochResponse> offsetsForLeaderEpoch(Set<TopicPartition> partitions, long timeout) {
         long startMs = time.milliseconds();
         long remaining = timeout;
         do {

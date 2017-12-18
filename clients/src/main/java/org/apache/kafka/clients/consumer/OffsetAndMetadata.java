@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.clients.consumer;
 
+import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 
 import java.io.Serializable;
@@ -28,13 +29,16 @@ import java.io.Serializable;
 public class OffsetAndMetadata implements Serializable {
     private final long offset;
     private final String metadata;
+    private final int leaderEpoch;
 
     /**
      * Construct a new OffsetAndMetadata object for committing through {@link KafkaConsumer}.
      * @param offset The offset to be committed
-     * @param metadata Non-null metadata
+     * @param metadata null metadata is converted to the empty string.
+     * @param leaderEpoch The epoch of the leader for the associated partition.  This will be ignored
+     * if specified by user code during offset commit.
      */
-    public OffsetAndMetadata(long offset, String metadata) {
+    public OffsetAndMetadata(long offset, String metadata, int leaderEpoch) {
         this.offset = offset;
         // The server converts null metadata to an empty string. So we store it as an empty string as well on the client
         // to be consistent.
@@ -42,8 +46,19 @@ public class OffsetAndMetadata implements Serializable {
             this.metadata = OffsetFetchResponse.NO_METADATA;
         else
             this.metadata = metadata;
+        this.leaderEpoch = leaderEpoch;
     }
+    
 
+    /**
+     * Construct a new OffsetAndMetadata object for committing through {@link KafkaConsumer}.
+     * @param offset The offset to be committed
+     * @param metadata Non-null metadata
+     */
+    public OffsetAndMetadata(long offset, String metadata) {
+        this(offset, "", MetadataResponse.NO_LEADER_EPOCH);
+    }
+    
     /**
      * Construct a new OffsetAndMetadata object for committing through {@link KafkaConsumer}. The metadata
      * associated with the commit will be empty.
@@ -59,6 +74,10 @@ public class OffsetAndMetadata implements Serializable {
 
     public String metadata() {
         return metadata;
+    }
+    
+    public int leaderEpoch() {
+    	return leaderEpoch;
     }
 
     @Override

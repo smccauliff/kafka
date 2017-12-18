@@ -100,6 +100,7 @@ class LeaderEpochFileCache(topicPartition: TopicPartition, leo: () => LogOffsetM
           leo().messageOffset
         }
         else {
+          //TODO: this might need to more a more efficient data structure for reset-offset-closest
           val subsequentEpochs = epochs.filter(e => e.epoch > requestedEpoch)
           if (subsequentEpochs.isEmpty || requestedEpoch < epochs.head.epoch)
             UNDEFINED_EPOCH_OFFSET

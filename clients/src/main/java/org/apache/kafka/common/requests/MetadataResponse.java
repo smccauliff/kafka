@@ -81,6 +81,7 @@ public class MetadataResponse extends AbstractResponse {
      */
 
     private static final String LEADER_KEY_NAME = "leader";
+    private static final String LEADER_EPOCH_KEY_NAME = "leader_epoch";
     private static final String REPLICAS_KEY_NAME = "replicas";
     private static final String ISR_KEY_NAME = "isr";
     private static final String OFFLINE_REPLICAS_KEY_NAME = "offline_replicas";
@@ -123,6 +124,16 @@ public class MetadataResponse extends AbstractResponse {
             new Field(ISR_KEY_NAME, new ArrayOf(INT32), "The set of nodes that are in sync with the leader for this partition."),
             new Field(OFFLINE_REPLICAS_KEY_NAME, new ArrayOf(INT32), "The set of offline replicas of this partition."));
 
+    private static final Schema PARTITION_METADATA_V3 = new Schema(
+            ERROR_CODE,
+            PARTITION_ID,
+            new Field(LEADER_KEY_NAME, INT32, "The id of the broker acting as leader for this partition."),
+            new Field(LEADER_EPOCH_KEY_NAME, INT32, "The leader epoch."),
+            new Field(REPLICAS_KEY_NAME, new ArrayOf(INT32), "The set of all nodes that host this partition."),
+            new Field(ISR_KEY_NAME, new ArrayOf(INT32), "The set of nodes that are in sync with the leader for this partition."),
+            new Field(OFFLINE_REPLICAS_KEY_NAME, new ArrayOf(INT32), "The set of offline replicas of this partition."));
+
+    
     private static final Schema TOPIC_METADATA_V1 = new Schema(
             ERROR_CODE,
             TOPIC_NAME,
@@ -131,6 +142,12 @@ public class MetadataResponse extends AbstractResponse {
 
     // TOPIC_METADATA_V2 added a per-partition offline_replicas field. This field specifies the list of replicas that are offline.
     private static final Schema TOPIC_METADATA_V2 = new Schema(
+            ERROR_CODE,
+            TOPIC_NAME,
+            new Field(IS_INTERNAL_KEY_NAME, BOOLEAN, "Indicates if the topic is considered a Kafka internal topic"),
+            new Field(PARTITION_METADATA_KEY_NAME, new ArrayOf(PARTITION_METADATA_V2), "Metadata for each partition of the topic."));
+
+    private static final Schema TOPIC_METADATA_V3 = new Schema(
             ERROR_CODE,
             TOPIC_NAME,
             new Field(IS_INTERNAL_KEY_NAME, BOOLEAN, "Indicates if the topic is considered a Kafka internal topic"),
@@ -164,11 +181,21 @@ public class MetadataResponse extends AbstractResponse {
             new Field(CONTROLLER_ID_KEY_NAME, INT32, "The broker id of the controller broker."),
             new Field(TOPIC_METADATA_KEY_NAME, new ArrayOf(TOPIC_METADATA_V2)));
 
+    /** METADATA_RESPONSE_V6 added a per-partition leader_epoch. */
+    private static final Schema METADATA_RESPONSE_V6 = new Schema(
+            THROTTLE_TIME_MS,
+            new Field(BROKERS_KEY_NAME, new ArrayOf(METADATA_BROKER_V1), "Host and port information for all brokers."),
+            new Field(CLUSTER_ID_KEY_NAME, NULLABLE_STRING, "The cluster id that this broker belongs to."),
+            new Field(CONTROLLER_ID_KEY_NAME, INT32, "The broker id of the controller broker."),
+            new Field(TOPIC_METADATA_KEY_NAME, new ArrayOf(TOPIC_METADATA_V3)));
+    
     public static Schema[] schemaVersions() {
         return new Schema[] {METADATA_RESPONSE_V0, METADATA_RESPONSE_V1, METADATA_RESPONSE_V2, METADATA_RESPONSE_V3,
-            METADATA_RESPONSE_V4, METADATA_RESPONSE_V5};
+            METADATA_RESPONSE_V4, METADATA_RESPONSE_V5, METADATA_RESPONSE_V6};
     }
 
+    public static final int NO_LEADER_EPOCH = -1;
+    
     private final int throttleTimeMs;
     private final Collection<Node> brokers;
     private final Node controller;
@@ -181,6 +208,7 @@ public class MetadataResponse extends AbstractResponse {
     public MetadataResponse(List<Node> brokers, String clusterId, int controllerId, List<TopicMetadata> topicMetadata) {
         this(DEFAULT_THROTTLE_TIME, brokers, clusterId, controllerId, topicMetadata);
     }
+    
 
     public MetadataResponse(int throttleTimeMs, List<Node> brokers, String clusterId, int controllerId, List<TopicMetadata> topicMetadata) {
         this.throttleTimeMs = throttleTimeMs;
@@ -237,7 +265,10 @@ public class MetadataResponse extends AbstractResponse {
                 int partition = partitionInfo.get(PARTITION_ID);
                 int leader = partitionInfo.getInt(LEADER_KEY_NAME);
                 Node leaderNode = leader == -1 ? null : brokers.get(leader);
-
+                int leaderEpoch = NO_LEADER_EPOCH;
+                if (partitionInfo.hasField(LEADER_EPOCH_KEY_NAME))
+                    leaderEpoch = partitionInfo.getInt(LEADER_EPOCH_KEY_NAME);
+                
                 Object[] replicas = (Object[]) partitionInfo.get(REPLICAS_KEY_NAME);
                 List<Node> replicaNodes = convertToNodes(brokers, replicas);
 
@@ -248,7 +279,7 @@ public class MetadataResponse extends AbstractResponse {
                     (Object[]) partitionInfo.get(OFFLINE_REPLICAS_KEY_NAME) : new Object[0];
                 List<Node> offlineNodes = convertToNodes(brokers, offlineReplicas);
 
-                partitionMetadata.add(new PartitionMetadata(partitionError, partition, leaderNode, replicaNodes, isrNodes, offlineNodes));
+                partitionMetadata.add(new PartitionMetadata(partitionError, partition, leaderNode, leaderEpoch, replicaNodes, isrNodes, offlineNodes));
             }
 
             topicMetadata.add(new TopicMetadata(topicError, topic, isInternal, partitionMetadata));
@@ -353,6 +384,7 @@ public class MetadataResponse extends AbstractResponse {
                             metadata.topic,
                             partitionMetadata.partition,
                             partitionMetadata.leader,
+                            partitionMetadata.leaderEpoch,
                             partitionMetadata.replicas.toArray(new Node[0]),
                             partitionMetadata.isr.toArray(new Node[0]),
                             partitionMetadata.offlineReplicas.toArray(new Node[0])));
@@ -438,6 +470,7 @@ public class MetadataResponse extends AbstractResponse {
         private final Errors error;
         private final int partition;
         private final Node leader;
+        private final int leaderEpoch;
         private final List<Node> replicas;
         private final List<Node> isr;
         private final List<Node> offlineReplicas;
@@ -445,12 +478,14 @@ public class MetadataResponse extends AbstractResponse {
         public PartitionMetadata(Errors error,
                                  int partition,
                                  Node leader,
+                                 int leaderEpoch,
                                  List<Node> replicas,
                                  List<Node> isr,
                                  List<Node> offlineReplicas) {
             this.error = error;
             this.partition = partition;
             this.leader = leader;
+            this.leaderEpoch = leaderEpoch;
             this.replicas = replicas;
             this.isr = isr;
             this.offlineReplicas = offlineReplicas;
@@ -480,12 +515,17 @@ public class MetadataResponse extends AbstractResponse {
             return offlineReplicas;
         }
 
+        public int leaderEpoch() {
+            return leaderEpoch;
+        }
+        
         @Override
         public String toString() {
             return "(type=PartitionMetadata," +
                     ", error=" + error +
                     ", partition=" + partition +
                     ", leader=" + leader +
+                    ", leaderEpoch=" + leaderEpoch +
                     ", replicas=" + Utils.join(replicas, ",") +
                     ", isr=" + Utils.join(isr, ",") +
                     ", offlineReplicas=" + Utils.join(offlineReplicas, ",") + ')';
@@ -532,6 +572,8 @@ public class MetadataResponse extends AbstractResponse {
                 partitionData.set(ERROR_CODE, partitionMetadata.error.code());
                 partitionData.set(PARTITION_ID, partitionMetadata.partition);
                 partitionData.set(LEADER_KEY_NAME, partitionMetadata.leader.id());
+                if (partitionData.hasField(LEADER_EPOCH_KEY_NAME))
+                    partitionData.set(LEADER_KEY_NAME, partitionMetadata.leaderEpoch());
                 ArrayList<Integer> replicas = new ArrayList<>(partitionMetadata.replicas.size());
                 for (Node node : partitionMetadata.replicas)
                     replicas.add(node.id());

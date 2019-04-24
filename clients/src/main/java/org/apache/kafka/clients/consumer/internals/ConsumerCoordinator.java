@@ -308,6 +308,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
      * @return true iff the operation succeeded
      */
     public boolean poll(Timer timer) {
+        if (prevPollTime > Long.MIN_VALUE) {
+            sensors.pollInterval.record(timer.currentTimeMs() - prevPollTime);
+        }
         prevPollTime = timer.currentTimeMs();
 
         invokeCompletedOffsetCommitCallbacks();

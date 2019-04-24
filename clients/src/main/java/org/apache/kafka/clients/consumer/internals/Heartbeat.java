@@ -76,7 +76,9 @@ public final class Heartbeat {
     }
 
     public void receiveHeartbeat() {
-        update(time.milliseconds());
+        long currentTimeMs = time.milliseconds();
+        lastHeartbeatReceive = currentTimeMs;
+        update(currentTimeMs);
         sessionTimer.reset(sessionTimeoutMs);
     }
 

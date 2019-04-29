@@ -121,7 +121,7 @@
       <property name="max" value="16"/>
     </module>
     <module name="JavaNCSS">
-      <!-- LinkedIN: These need to be larger than the upstream (Apache open source) defaults since we need to be able to add
+      <!-- LinkedIn: These need to be larger than the upstream (Apache open source) defaults since we need to be able to add
            functionality without needing to refactor methods, classes and files before upstream does the refactor.
         -->
       <!-- default is 50 -->

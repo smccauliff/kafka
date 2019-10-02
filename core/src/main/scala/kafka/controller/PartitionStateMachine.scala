@@ -355,7 +355,7 @@ class ZkPartitionStateMachine(config: KafkaConfig,
     val (invalidPartitionsForElection, validPartitionsForElection) = leaderIsrAndControllerEpochPerPartition.partition { case (_, leaderIsrAndControllerEpoch) =>
       leaderIsrAndControllerEpoch.controllerEpoch > controllerContext.epoch
     }
-    //TODO: if we find any invalid partitions for election shouldn't the controller thread exit since there is a new controller?
+
     invalidPartitionsForElection.foreach { case (partition, leaderIsrAndControllerEpoch) =>
       val failMsg = s"aborted leader election for partition $partition since the LeaderAndIsr path was " +
         s"already written by another controller. This probably means that the current controller $controllerId went through " +
@@ -450,7 +450,6 @@ object PartitionLeaderElectionAlgorithms {
                   }
     }
   }
-
 
   def reassignPartitionLeaderElection(reassignment: Seq[Int], isr: Seq[Int], liveReplicas: Set[Int]): Option[Int] = {
     reassignment.find(id => liveReplicas.contains(id) && isr.contains(id))

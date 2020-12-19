@@ -35,7 +35,7 @@ import scala.math.Ordered.orderingToOrdered
 import scala.collection.{mutable, _}
 import scala.collection.JavaConverters._
 
-object FetchSession {
+object FetchSession extends Logging {
   type REQ_MAP = util.Map[TopicPartition, FetchRequest.PartitionData]
   type RESP_MAP = util.LinkedHashMap[TopicPartition, FetchResponse.PartitionData[Records]]
   type CACHE_MAP = ImplicitLinkedHashCollection[CachedPartition]
@@ -270,7 +270,13 @@ case class FetchSession(val id: Int,
   }
 }
 
-trait FetchContext extends Logging {
+object FetchContext extends Logging {
+
+}
+
+trait FetchContext {
+  import FetchContext._
+
   /**
     * Get the fetch offset for a given partition.
     */
@@ -308,6 +314,8 @@ trait FetchContext extends Logging {
   */
 class SessionErrorContext(val error: Errors,
                           val reqMetadata: JFetchMetadata) extends FetchContext {
+  import FetchContext._
+
   override def getFetchOffset(part: TopicPartition): Option[Long] = None
 
   override def foreachPartition(fun: (TopicPartition, FetchRequest.PartitionData) => Unit): Unit = {}
@@ -329,6 +337,8 @@ class SessionErrorContext(val error: Errors,
   * @param fetchData          The partition data from the fetch request.
   */
 class SessionlessFetchContext(val fetchData: util.Map[TopicPartition, FetchRequest.PartitionData]) extends FetchContext {
+  import FetchContext._
+
   override def getFetchOffset(part: TopicPartition): Option[Long] =
     Option(fetchData.get(part)).map(_.fetchOffset)
 
@@ -360,6 +370,8 @@ class FullFetchContext(private val time: Time,
                        private val reqMetadata: JFetchMetadata,
                        private val fetchData: util.Map[TopicPartition, FetchRequest.PartitionData],
                        private val isFromFollower: Boolean) extends FetchContext {
+  import FetchContext._
+
   override def getFetchOffset(part: TopicPartition): Option[Long] =
     Option(fetchData.get(part)).map(_.fetchOffset)
 
@@ -400,6 +412,8 @@ class FullFetchContext(private val time: Time,
 class IncrementalFetchContext(private val time: Time,
                               private val reqMetadata: JFetchMetadata,
                               private val session: FetchSession) extends FetchContext {
+
+  import FetchContext._
 
   override def getFetchOffset(tp: TopicPartition): Option[Long] = session.getFetchOffset(tp)
 
@@ -480,7 +494,7 @@ class IncrementalFetchContext(private val time: Time,
           partitionIter.next()
         }
         debug(s"Incremental fetch context with session id ${session.id} returning " +
-          s"${partitionsToLogString(updates.keySet)}")
+            s"${partitionsToLogString(updates.keySet)}")
         new FetchResponse(Errors.NONE, updates, 0, session.id)
       }
     }

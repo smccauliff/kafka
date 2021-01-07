@@ -35,7 +35,7 @@ import scala.math.Ordered.orderingToOrdered
 import scala.collection.{mutable, _}
 import scala.collection.JavaConverters._
 
-object FetchSession extends Logging {
+object FetchSession {
   type REQ_MAP = util.Map[TopicPartition, FetchRequest.PartitionData]
   type RESP_MAP = util.LinkedHashMap[TopicPartition, FetchResponse.PartitionData[Records]]
   type CACHE_MAP = ImplicitLinkedHashCollection[CachedPartition]

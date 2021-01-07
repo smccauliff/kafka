@@ -494,7 +494,7 @@ class IncrementalFetchContext(private val time: Time,
           partitionIter.next()
         }
         debug(s"Incremental fetch context with session id ${session.id} returning " +
-            s"${partitionsToLogString(updates.keySet)}")
+          s"${partitionsToLogString(updates.keySet)}")
         new FetchResponse(Errors.NONE, updates, 0, session.id)
       }
     }
